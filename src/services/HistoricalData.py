@@ -1,4 +1,4 @@
-import bs4
+from bs4 import BeautifulSoup
 import pandas as pd
 
 def pullExistingPrices():
@@ -7,5 +7,5 @@ def pullExistingPrices():
 def getNewPrices():
     pass
 
-def pushHistorical(existingDf: pd.Dataframe, newDf: pd.Dataframe):
+def pushHistorical(existingDf: pd.DataFrame, newDf: pd.DataFrame):
     pass

@@ -16,12 +16,12 @@ def main():
     initDirs()
     if runParam == 'historical':
         existingPricesDf = pullExistingPrices()
-        newPricesDf = getNewPrices()
-        pushHistorical(existingPricesDf, newPricesDf)
+        newPriceDf = getNewPrices()
+        pushHistorical(existingPricesDf, newPriceDf)
     elif runParam == 'prices':
-        if validateExisting():
-            newPriceDf = getNewPrices()
-            comparePrices(newPriceDf)
+        oldPriceDf = getOldPrices()
+        newPriceDf = getNewPrices()
+        comparePrices(oldPriceDf, newPriceDf)
             
 
 if __name__ == '__main__':
