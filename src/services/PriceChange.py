@@ -2,8 +2,8 @@ from bs4 import BeautifulSoup as bs
 import pandas as pd
 import requests
 import json
+from time import sleep
 from services.Config import config
-from fp.fp import FreeProxy
 
 
 def getOldPrices():
@@ -18,51 +18,34 @@ def getOldPrices():
     return oldPriceDf
 
 def getNewPrices():
-    print('Generating new price change data (this may take a few minutes)...')
-    print('Updates will come every 10 items traversed')
     newPriceDf = pd.DataFrame(columns=config.priceCols)
-    resp = requests.get(f'https://api.steamapis.com/market/items/730?api_key={config.apiKey}')
-    allItems = resp.json()['data']
-    newItems = []
-    for item in allItems:
-        if item['prices']['unstable'] \
-        or 'Sticker |' in item['market_name'] \
-        or item['prices']['safe_ts']['last_90d'] < 50:
-            continue
-        newItems.append(item)
-    
-    allItems = newItems
 
+    pageIter = 1
+
+    # Before starting full iteration, get number of results (and therefore visitable pages)
     itemDict = {}
-    itemIter = 0
-    for item in allItems:
-        if itemIter % 10 == 0:
-            print(f'{itemIter} out of {len(allItems)} traversed ({(itemIter / allItems) * 100})%...')
-
-        itemId = item['nameID']
-        listingObj = None
+    continueIter = True
+    maxRes = 0
+    while continueIter:
         try:
-            if itemIter % len(config.proxies) == 1:
-                listingObj = requests.get(config.marketUrl.replace('item_nameid=', f'item_nameid={itemId}'), timeout=3).json()
-            else:
-                proxy = config.proxies.pop(0)
-                config.proxies.append(proxy)
-                listingObj = requests.get(config.marketUrl.replace('item_nameid=', f'item_nameid={itemId}'), proxies=proxy, timeout=3).json()
-        except Exception as e:
-            print('Connection error occurred, skipping item...')
-            listingObj = None
+            print(f'Scraping page {pageIter}')
+            resp = requests.get(config.marketUrl.replace('start=', f'start={pageIter*100}')).json()
+            res = resp['results']
+            for item in res:
+                itemDict[item['name'].replace('★ ', '').replace('™', '')] = float(item['sell_price_text'].replace('$', '').replace(',', ''))
 
-        if not listingObj or listingObj['sell_order_count'] == 0:
-            itemIter += 1
-            continue
-        
-        curPrice = float(listingObj['sell_order_price'].replace('$', '').replace(',', ''))
-        itemDict[item['market_name'].replace('★ ', '').replace('™', '')] = curPrice
-        itemIter += 1
+            pageIter += 1
+            maxRes = max(maxRes, resp['total_count'])
+            if pageIter * 100 >= maxRes:
+                continueIter = False
+            else:
+                sleep(3)
+        except Exception as e:
+            print('Error when parsing marketplace. Exiting...')
+            exit(1)
 
     newPriceDf['Name'] = itemDict.keys()
     newPriceDf['Price'] = itemDict.values()
-    print(newPriceDf)
     return newPriceDf
 
 def comparePrices(oldPriceDf: pd.DataFrame, newPriceDf: pd.DataFrame):
@@ -70,6 +53,7 @@ def comparePrices(oldPriceDf: pd.DataFrame, newPriceDf: pd.DataFrame):
     mergedDf = pd.merge(left=oldPriceDf, right=newPriceDf, on='Name', how='inner', suffixes=('_old', '_new'))
 
     if len(mergedDf) == 0:
+        print('No original data, so no comparison can occur. Dumping new data...')
         newPriceDict = newPriceDf.set_index('Name')['Price'].to_dict()
         json.dump(newPriceDict, open(f'{config.cwd}/data/last_price_check.json', 'w'))
         return
