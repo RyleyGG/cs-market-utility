@@ -13,6 +13,7 @@ def main():
         exit(1)
     
     initDirs()
+    initProxies()
     if runParam == 'historical':
         existingPricesDf = getOldHistorical()
         newPriceDf = getNewHistorical()

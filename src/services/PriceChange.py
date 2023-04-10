@@ -49,18 +49,26 @@ def getNewPrices():
     maxRes = 0
     resp = ''
     failedBool = False
+    # proxy = ''
+    proxy = config.proxies.pop(0)
+    config.proxies.append(proxy)
+    proxyRots = 0
     while continueIter:
         try:
             if maxRes != 0:
                 print(f'Scraping page {pageIter} out of {"?" if maxRes == 0 else floor(maxRes / 100)} ({round((pageIter / floor(maxRes / 100)) * 100, 2)}%)')
             else:
                 print(f'Scraping page {pageIter} (calculating total result count...)')
-            resp = requests.get(config.marketUrl.replace('start=', f'start={pageIter*100}'))
+            resp = None
+            if proxy == '':
+                resp = requests.get(config.marketUrl.replace('start=', f'start={pageIter*100}'))
+            else:
+                resp = requests.get(config.marketUrl.replace('start=', f'start={pageIter*100}'), proxies=proxy)
             json = resp.json()
             res = json['results']
             failedBool = False
             for item in res:
-                if item['name'].replace('★ ', '').replace('™', '') not in lastSoldDict.keys():
+                if item['name'].replace('★ ', '').replace('™', '') not in lastSoldDict.keys() or item['sell_listings'] == 0:
                     continue
                 curPriceDict[item['name'].replace('★ ', '').replace('™', '')] = float(item['sell_price_text'].replace('$', '').replace(',', ''))
 
@@ -68,9 +76,16 @@ def getNewPrices():
             maxRes = max(maxRes, json['total_count'])
             if pageIter * 100 >= maxRes:
                 continueIter = False
-            elif pageIter % 26 == 0:
-                print('25 pages iterated. Pausing to avoid timeout...')
-                sleep(300)
+            elif pageIter % 21 == 0 and not failedBool:
+                # print('20 pages iterated. Pausing to avoid timeout...')
+                # sleep(300)
+                print('20 pages iterated. Switching proxy...')
+                if proxyRots != 0 and proxyRots % len(config.proxies) == 0:
+                    proxy = ''
+                else:
+                    proxy = config.proxies.pop(0)
+                    config.proxies.append(proxy)
+                proxyRots += 1
             else:
                 sleep(0.1)
         except Exception as e:
@@ -82,6 +97,8 @@ def getNewPrices():
             else:
                 failedBool = True
                 print('Error when parsing marketplace (likely a timeout)')
+                print(f'ERROR: {str(e)}')
+                print(f'Resp object: {resp}')
                 print('Pausing to avoid further timeout and continuing...')
                 sleep(300)
 
