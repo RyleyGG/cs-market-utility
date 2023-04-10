@@ -4,6 +4,7 @@ import requests
 import json
 from time import sleep
 from math import floor
+from piapy import PiaVpn
 from services.Config import config
 
 
@@ -49,21 +50,15 @@ def getNewPrices():
     maxRes = 0
     resp = ''
     failedBool = False
-    # proxy = ''
-    proxy = config.proxies.pop(0)
-    config.proxies.append(proxy)
-    proxyRots = 0
+    vpn = PiaVpn()
+    vpn.connect(timeout=3)
     while continueIter:
         try:
             if maxRes != 0:
                 print(f'Scraping page {pageIter} out of {"?" if maxRes == 0 else floor(maxRes / 100)} ({round((pageIter / floor(maxRes / 100)) * 100, 2)}%)')
             else:
                 print(f'Scraping page {pageIter} (calculating total result count...)')
-            resp = None
-            if proxy == '':
-                resp = requests.get(config.marketUrl.replace('start=', f'start={pageIter*100}'))
-            else:
-                resp = requests.get(config.marketUrl.replace('start=', f'start={pageIter*100}'), proxies=proxy)
+            resp = requests.get(config.marketUrl.replace('start=', f'start={pageIter*100}'))
             json = resp.json()
             res = json['results']
             failedBool = False
@@ -76,16 +71,12 @@ def getNewPrices():
             maxRes = max(maxRes, json['total_count'])
             if pageIter * 100 >= maxRes:
                 continueIter = False
-            elif pageIter % 21 == 0 and not failedBool:
-                # print('20 pages iterated. Pausing to avoid timeout...')
-                # sleep(300)
-                print('20 pages iterated. Switching proxy...')
-                if proxyRots != 0 and proxyRots % len(config.proxies) == 0:
-                    proxy = ''
-                else:
-                    proxy = config.proxies.pop(0)
-                    config.proxies.append(proxy)
-                proxyRots += 1
+            elif pageIter % 21 == 0:
+                print('20 pages iterated. Grabbing new IP...')
+                print(f'Old IP: {vpn.ip()}')
+                vpn.disconnect()
+                vpn.connect()
+                print(f'New IP: {vpn.ip()}')
             else:
                 sleep(0.1)
         except Exception as e:
