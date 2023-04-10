@@ -2,7 +2,6 @@ import sys
 from services.Initialize import *
 from services.HistoricalData import *
 from services.PriceChange import *
-from services.Config import config
 
 def main():
     argList = sys.argv[1:]
@@ -15,13 +14,15 @@ def main():
     
     initDirs()
     if runParam == 'historical':
-        existingPricesDf = pullExistingPrices()
-        newPriceDf = getNewPrices()
+        existingPricesDf = getOldHistorical()
+        newPriceDf = getNewHistorical()
         pushHistorical(existingPricesDf, newPriceDf)
     elif runParam == 'prices':
         oldPriceDf = getOldPrices()
-        newPriceDf = getNewPrices()
-        comparePrices(oldPriceDf, newPriceDf)
+        newDfs = getNewPrices()
+        curPriceDf = newDfs[0]
+        lastSoldDf = newDfs[1]
+        comparePrices(oldPriceDf, curPriceDf, lastSoldDf)
             
 
 if __name__ == '__main__':

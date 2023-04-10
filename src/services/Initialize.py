@@ -1,8 +1,4 @@
 import os
-import json
-import datetime
-import requests
-from fp.fp import FreeProxy
 from services.Config import config
 
 def initDirs():
