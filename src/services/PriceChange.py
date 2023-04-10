@@ -3,10 +3,11 @@ import pandas as pd
 import requests
 import json
 from services.Config import config
-from time import sleep
+from fp.fp import FreeProxy
 
 
 def getOldPrices():
+    print('Getting old price change data...')
     oldPriceDf = pd.DataFrame(columns=config.priceCols)
     try:
         priceObj = json.load(open(f'{config.cwd}/data/last_price_check.json', 'r'))
@@ -17,44 +18,55 @@ def getOldPrices():
     return oldPriceDf
 
 def getNewPrices():
+    print('Generating new price change data (this may take a few minutes)...')
+    print('Updates will come every 10 items traversed')
     newPriceDf = pd.DataFrame(columns=config.priceCols)
-
-    pageIter = 1
-    pageSuffix = f'#p{pageIter}_price_asc'
+    resp = requests.get(f'https://api.steamapis.com/market/items/730?api_key={config.apiKey}')
+    allItems = resp.json()['data']
+    newItems = []
+    for item in allItems:
+        if item['prices']['unstable'] \
+        or 'Sticker |' in item['market_name'] \
+        or item['prices']['safe_ts']['last_90d'] < 50:
+            continue
+        newItems.append(item)
     
-    # Before starting full iteration, get number of results (and therefore visitable pages)
-    resp = requests.get(config.marketUrl + pageSuffix, config.requestHeaders)
-    soup = bs(resp.content, 'html.parser')
-    resultsElem = int(soup.find("span", {"id": "searchResults_total"}).contents[0].replace(',', ''))
-    maxPage = resultsElem / 10
+    allItems = newItems
+
     itemDict = {}
+    itemIter = 0
+    for item in allItems:
+        if itemIter % 10 == 0:
+            print(f'{itemIter} out of {len(allItems)} traversed ({(itemIter / allItems) * 100})%...')
 
-    while pageIter <= maxPage:
+        itemId = item['nameID']
+        listingObj = None
         try:
-            print(f'Scraping page {pageIter}')
-            resp = requests.get(config.marketUrl + pageSuffix, config.requestHeaders)
-            soup = bs(resp.content, 'html.parser')
-            itemResp = soup.find_all("span", {"class": "market_listing_item_name"})
-            saleResp = soup.find_all("span", {"class": "sale_price"})
-            if len(itemResp) != len(saleResp):
-                print('Uneven item and price count. Exiting...')
-                exit(1)
-
-            for i in range(len(itemResp)):
-                itemDict[itemResp[i].text.replace('★ ', '').replace('™', '')] = float(saleResp[i].text.replace('$', '').replace(',', ''))
-            
-            pageIter += 1
-            pageSuffix = f'#p{pageIter}_price_asc'
-            sleep(1.2)
+            if itemIter % len(config.proxies) == 1:
+                listingObj = requests.get(config.marketUrl.replace('item_nameid=', f'item_nameid={itemId}'), timeout=3).json()
+            else:
+                proxy = config.proxies.pop(0)
+                config.proxies.append(proxy)
+                listingObj = requests.get(config.marketUrl.replace('item_nameid=', f'item_nameid={itemId}'), proxies=proxy, timeout=3).json()
         except Exception as e:
-            print('Error when parsing marketplace. Exiting...')
-            exit(1)
-    
+            print('Connection error occurred, skipping item...')
+            listingObj = None
+
+        if not listingObj or listingObj['sell_order_count'] == 0:
+            itemIter += 1
+            continue
+        
+        curPrice = float(listingObj['sell_order_price'].replace('$', '').replace(',', ''))
+        itemDict[item['market_name'].replace('★ ', '').replace('™', '')] = curPrice
+        itemIter += 1
+
     newPriceDf['Name'] = itemDict.keys()
     newPriceDf['Price'] = itemDict.values()
+    print(newPriceDf)
     return newPriceDf
 
 def comparePrices(oldPriceDf: pd.DataFrame, newPriceDf: pd.DataFrame):
+    print('Comparing new and old price change data...')
     mergedDf = pd.merge(left=oldPriceDf, right=newPriceDf, on='Name', how='inner', suffixes=('_old', '_new'))
 
     if len(mergedDf) == 0:
@@ -77,5 +89,5 @@ def comparePrices(oldPriceDf: pd.DataFrame, newPriceDf: pd.DataFrame):
             print(f'Price Difference: {row["Price Difference"]}\n')
     
     print('Updating prices')
-    mergedPriceDict = newPriceDf.set_index('Name')['Price_new'].to_dict()
+    mergedPriceDict = mergedDf.set_index('Name')['Price_new'].to_dict()
     json.dump(mergedPriceDict, open(f'{config.cwd}/data/last_price_check.json', 'w'))
