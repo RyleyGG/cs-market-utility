@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 import json
 from time import sleep
+from math import floor
 from services.Config import config
 
 
@@ -46,26 +47,43 @@ def getNewPrices():
     pageIter = 1
     continueIter = True
     maxRes = 0
+    resp = ''
+    failedBool = False
     while continueIter:
         try:
-            print(f'Scraping page {pageIter}')
-            resp = requests.get(config.marketUrl.replace('start=', f'start={pageIter*100}')).json()
-            res = resp['results']
+            if maxRes != 0:
+                print(f'Scraping page {pageIter} out of {"?" if maxRes == 0 else floor(maxRes / 100)} ({round((pageIter / floor(maxRes / 100)) * 100, 2)}%)')
+            else:
+                print(f'Scraping page {pageIter} (calculating total result count...)')
+            resp = requests.get(config.marketUrl.replace('start=', f'start={pageIter*100}'))
+            json = resp.json()
+            res = json['results']
+            failedBool = False
             for item in res:
                 if item['name'].replace('★ ', '').replace('™', '') not in lastSoldDict.keys():
-                    print(f'Name not found: {item["name"]}')
                     continue
                 curPriceDict[item['name'].replace('★ ', '').replace('™', '')] = float(item['sell_price_text'].replace('$', '').replace(',', ''))
 
             pageIter += 1
-            maxRes = max(maxRes, resp['total_count'])
+            maxRes = max(maxRes, json['total_count'])
             if pageIter * 100 >= maxRes:
                 continueIter = False
+            elif pageIter % 26 == 0:
+                print('25 pages iterated. Pausing to avoid timeout...')
+                sleep(300)
             else:
-                sleep(5)
+                sleep(0.1)
         except Exception as e:
-            print('Error when parsing marketplace. Exiting...')
-            exit(1)
+            if failedBool:
+                print('Error when parsing marketplace. Exiting...')
+                print(f'ERROR: {str(e)}')
+                print(f'Resp object: {resp}')
+                exit(1)
+            else:
+                failedBool = True
+                print('Error when parsing marketplace (likely a timeout)')
+                print('Pausing to avoid further timeout and continuing...')
+                sleep(300)
 
     curPriceDf['Name'] = curPriceDict.keys()
     curPriceDf['Price'] = curPriceDict.values()
@@ -84,7 +102,7 @@ def comparePrices(oldPriceDf: pd.DataFrame, lastSoldDf: pd.DataFrame, curPriceDf
         return
 
     mergedDf['Price Difference'] = mergedDf['Price_new'] / mergedDf['Price_old']
-    notableChangesDf = mergedDf[mergedDf['Price Difference'] <= 0.9]
+    notableChangesDf = mergedDf[mergedDf['Price Difference'] < 0.85]
     notableChangesDf = notableChangesDf.sort_values(by=['Price Difference'])
 
     print('\n')
@@ -93,10 +111,13 @@ def comparePrices(oldPriceDf: pd.DataFrame, lastSoldDf: pd.DataFrame, curPriceDf
     else:
         print('!!!Notable changes found!!!')
         for index, row in notableChangesDf.iterrows():
+            potentialProfit = row["Price_old"] * 0.85 - row["Price_new"]
             print(f'Name: {row["Name"]}')
             print(f'Old Price: {row["Price_old"]}')
             print(f'New Price: {row["Price_new"]}')
-            print(f'Price Difference: {row["Price Difference"]}\n')
+            print(f'Price Difference: {round(row["Price Difference"], 3)}%')
+            print(f'Profit (if sold at old price): {round(potentialProfit, 2)}')
+            print(f'Breakeven Price: {round(row["Price_new"] * 1.15, 2)}\n')
     
     print('Updating prices')
     newPriceDict = lastSoldDf.set_index('Name')['Price'].to_dict()
