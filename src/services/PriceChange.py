@@ -11,8 +11,11 @@ def getOldPrices():
     oldPriceDf = pd.DataFrame(columns=config.priceCols)
     try:
         priceObj = json.load(open(f'{config.cwd}/data/last_price_check.json', 'r'))
-        oldPriceDf['Name'] = priceObj.keys()
-        oldPriceDf['Price'] = priceObj.values()
+        if len(priceObj.keys()) != 0:
+            oldPriceDf['Name'] = priceObj.keys()
+            oldPriceDf['Price'] = priceObj.values()
+        else:
+            raise Exception
     except Exception as e:
         print('Unable to get existing price check data. Continuing with empty object...')
     return oldPriceDf
@@ -59,13 +62,15 @@ def getNewPrices():
             if pageIter * 100 >= maxRes:
                 continueIter = False
             else:
-                sleep(3)
+                sleep(5)
         except Exception as e:
             print('Error when parsing marketplace. Exiting...')
             exit(1)
 
     curPriceDf['Name'] = curPriceDict.keys()
     curPriceDf['Price'] = curPriceDict.values()
+    lastSoldDf['Name'] = lastSoldDict.keys()
+    lastSoldDf['Price'] = lastSoldDict.values()
     return [curPriceDf, lastSoldDf]
 
 def comparePrices(oldPriceDf: pd.DataFrame, lastSoldDf: pd.DataFrame, curPriceDf: pd.DataFrame):
@@ -80,6 +85,7 @@ def comparePrices(oldPriceDf: pd.DataFrame, lastSoldDf: pd.DataFrame, curPriceDf
 
     mergedDf['Price Difference'] = mergedDf['Price_new'] / mergedDf['Price_old']
     notableChangesDf = mergedDf[mergedDf['Price Difference'] <= 0.9]
+    notableChangesDf = notableChangesDf.sort_values(by=['Price Difference'])
 
     print('\n')
     if len(notableChangesDf) == 0:

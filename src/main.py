@@ -22,7 +22,7 @@ def main():
         newDfs = getNewPrices()
         curPriceDf = newDfs[0]
         lastSoldDf = newDfs[1]
-        comparePrices(oldPriceDf, curPriceDf, lastSoldDf)
+        comparePrices(oldPriceDf, lastSoldDf, curPriceDf)
             
 
 if __name__ == '__main__':
