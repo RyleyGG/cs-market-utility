@@ -4,6 +4,7 @@ import requests
 import json
 from time import sleep
 from math import floor
+from piapy import PiaVpn
 from services.Config import config
 
 
@@ -40,7 +41,9 @@ def getNewPrices():
     allItems = resp.json()['data']
     newItems = []
     for item in allItems:
-        lastSoldDict[item['market_hash_name'].replace('★ ', '').replace('™', '')] = item['prices']['latest']
+        avgPrice = item['prices']['safe_ts']['last_30d']
+        if avgPrice != 0:
+            lastSoldDict[item['market_hash_name'].replace('★ ', '').replace('™', '')] = avgPrice
     allItems = newItems
 
     # GENERATING CUR PRICE RESULTS
@@ -48,7 +51,11 @@ def getNewPrices():
     continueIter = True
     maxRes = 0
     resp = ''
-    failedBool = False
+    vpn = PiaVpn()
+    vpn.connect(timeout=3)
+    vpnSet = set()
+    vpnSet.add(vpn.ip())
+    print(f'Starting with IP: {vpn.ip()}')
     while continueIter:
         try:
             if maxRes != 0:
@@ -58,9 +65,8 @@ def getNewPrices():
             resp = requests.get(config.marketUrl.replace('start=', f'start={pageIter*100}'))
             json = resp.json()
             res = json['results']
-            failedBool = False
             for item in res:
-                if item['name'].replace('★ ', '').replace('™', '') not in lastSoldDict.keys():
+                if item['name'].replace('★ ', '').replace('™', '') not in lastSoldDict.keys() or item['sell_listings'] == 0:
                     continue
                 curPriceDict[item['name'].replace('★ ', '').replace('™', '')] = float(item['sell_price_text'].replace('$', '').replace(',', ''))
 
@@ -68,22 +74,32 @@ def getNewPrices():
             maxRes = max(maxRes, json['total_count'])
             if pageIter * 100 >= maxRes:
                 continueIter = False
-            elif pageIter % 26 == 0:
-                print('25 pages iterated. Pausing to avoid timeout...')
-                sleep(300)
-            else:
-                sleep(0.1)
+            elif ((pageIter - 1) % 20 == 0):
+                print('20 pages iterated. Grabbing new IP...')
+                print(f'Old IP: {vpn.ip()}')
+                vpn.disconnect()
+                vpn.connect()
+                while vpn.ip() in vpnSet:
+                    vpn.disconnect()
+                    vpn.connect()
+                print(f'New IP: {vpn.ip()}')
+                vpnSet.add(vpn.ip())
         except Exception as e:
-            if failedBool:
+            if resp.status_code == 429:
+                print('Connection timed out, changing VPN')
+                print(f'Old IP: {vpn.ip()}')
+                vpn.disconnect()
+                vpn.connect()
+                while vpn.ip() in vpnSet:
+                    vpn.disconnect()
+                    vpn.connect()
+                print(f'New IP: {vpn.ip()}')
+                vpnSet.add(vpn.ip())
+            else:
                 print('Error when parsing marketplace. Exiting...')
                 print(f'ERROR: {str(e)}')
                 print(f'Resp object: {resp}')
                 exit(1)
-            else:
-                failedBool = True
-                print('Error when parsing marketplace (likely a timeout)')
-                print('Pausing to avoid further timeout and continuing...')
-                sleep(300)
 
     curPriceDf['Name'] = curPriceDict.keys()
     curPriceDf['Price'] = curPriceDict.values()
@@ -115,7 +131,7 @@ def comparePrices(oldPriceDf: pd.DataFrame, lastSoldDf: pd.DataFrame, curPriceDf
             print(f'Name: {row["Name"]}')
             print(f'Old Price: {row["Price_old"]}')
             print(f'New Price: {row["Price_new"]}')
-            print(f'Price Difference: {round(row["Price Difference"], 3)}%')
+            print(f'Price Difference: {round(row["Price Difference"] * 100, 3)}%')
             print(f'Profit (if sold at old price): {round(potentialProfit, 2)}')
             print(f'Breakeven Price: {round(row["Price_new"] * 1.15, 2)}\n')
     
