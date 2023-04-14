@@ -37,7 +37,7 @@ def getNewPrices():
     curPriceDict = {}
 
     # GENERATING LAST SOLD RESULTS
-    resp = requests.get(f'https://api.steamapis.com/market/items/730?api_key={config.apiKey}')
+    resp = requests.get(f'https://api.steamapis.com/market/items/730?api_key={config.marketApiKey}')
     allItems = resp.json()['data']
     newItems = []
     for item in allItems:
@@ -62,7 +62,7 @@ def getNewPrices():
                 print(f'Scraping page {pageIter} out of {"?" if maxRes == 0 else floor(maxRes / 100)} ({round((pageIter / floor(maxRes / 100)) * 100, 2)}%)')
             else:
                 print(f'Scraping page {pageIter} (calculating total result count...)')
-            resp = requests.get(config.marketUrl.replace('start=', f'start={pageIter*100}'))
+            resp = requests.get(config.priceCheckUrl.replace('start=', f'start={pageIter*100}'))
             json = resp.json()
             res = json['results']
             for item in res:
